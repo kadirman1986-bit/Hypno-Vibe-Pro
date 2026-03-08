@@ -7,183 +7,169 @@ import subprocess
 from gtts import gTTS
 import google.generativeai as genai
 import matplotlib.pyplot as plt
+import time
+from datetime import datetime
 
 # ==========================================
-# 1. إعدادات النظام وقاعدة البيانات التقنية
+# 1. إعدادات النظام والأرشفة
 # ==========================================
-st.set_page_config(page_title="Hypno-Vibe Pro | Bio-Engineering", layout="wide", page_icon="🧠")
+st.set_page_config(page_title="Hypno-Vibe Pro | Bio-Data Center", layout="wide", page_icon="🧠")
+
+# إنشاء مجلد الجلسات إذا لم يكن موجوداً
+SESSIONS_DIR = "sessions_archive"
+if not os.path.exists(SESSIONS_DIR):
+    os.makedirs(SESSIONS_DIR)
 
 SESSION_LOGIC = {
-    "علاج البرود/التحفيز الأنثوي": {"base": 210.42, "beat": 12.0, "desc": "تردد الزهرة لتحفيز الطاقة الأنثوية الحيوية."},
-    "استعادة الفطرة والذكورة": {"base": 144.72, "beat": 15.0, "desc": "تردد المريخ لتعزيز القوة والتركيز الفطري."},
-    "الاستسلام وفك القيود (Letting Go)": {"base": 210.42, "beat": 6.0, "desc": "نبضة Theta العميقة لإزالة التشنج النفسي والتوتر."},
-    "تأريض وسكينة (Grounding/Delay)": {"base": 144.72, "beat": 7.83, "desc": "رنين شومان للهدوء والتحكم في الانفعالات وسرعة الاستجابة."}
-}
-
-OFFLINE_SCRIPTS = {
-    "علاج البرود/التحفيز الأنثوي": "تنفسي بعمق.. استرخي تماماً. اسمحي لجسدك باستعادة توازنه الطبيعي وطاقته الحيوية الآن.",
-    "استعادة الفطرة والذكورة": "خذ نفساً عميقاً.. استشعر قوتك الداخلية واتزانك.",
-    "الاستسلام وفك القيود (Letting Go)": "تحرر من كل القيود العصبية.. اترك كل الأفكار ترحل.",
-    "تأريض وسكينة (Grounding/Delay)": "أنت الآن ثابت كالجبال.. هادئ كالبحر."
+    "علاج البرود/التحفيز الأنثوي": {"base": 210.42, "beat": 12.0, "desc": "تردد الزهرة لتحفيز الطاقة الأنثوية."},
+    "استعادة الفطرة والذكورة": {"base": 144.72, "beat": 15.0, "desc": "تردد المريخ لتعزيز القوة والتركيز."},
+    "الاستسلام وفك القيود (Letting Go)": {"base": 210.42, "beat": 6.0, "desc": "نبضة Theta لفك التشنج والتوتر."},
+    "تأريض وسكينة (Grounding/Delay)": {"base": 144.72, "beat": 7.83, "desc": "رنين شومان للهدوء والتحكم."}
 }
 
 # ==========================================
-# 2. الدوال الهندسية (Core Engines)
+# 2. الدوال الهندسية والتحليل البصري
 # ==========================================
 
-def generate_binaural_beat(base_freq, beat_freq, duration, fade_duration=3):
+def plot_visuals(file_path):
+    """رسم الموجة والمخطط الطيفي"""
+    sr, data = wavfile.read(file_path)
+    if len(data.shape) > 1: data = data[:, 0]
+    
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        plt.figure(figsize=(10, 4))
+        plt.plot(data[:sr*5], color='#1f77b4', linewidth=0.5)
+        plt.title("Waveform (First 5s)")
+        plt.axis('off')
+        st.pyplot(plt)
+        
+    with col_v2:
+        plt.figure(figsize=(10, 4))
+        plt.specgram(data[:sr*10], Fs=sr, cmap="inferno", NFFT=1024)
+        plt.title("Spectrogram (Frequency Analysis)")
+        plt.ylabel("Frequency [Hz]")
+        plt.colorbar(label="Intensity [dB]")
+        st.pyplot(plt)
+
+def generate_binaural_beat(base_freq, beat_freq, duration, fade_duration):
     sr = 44100
     t = np.linspace(0, duration, int(sr * duration))
     left = np.sin(2 * np.pi * base_freq * t)
     right = np.sin(2 * np.pi * (base_freq + beat_freq) * t)
     
     fade_samples = int(fade_duration * sr)
-    fade_in = np.linspace(0, 1, fade_samples)
-    fade_out = np.linspace(1, 0, fade_samples)
-    
     envelope = np.ones(len(t))
-    envelope[:fade_samples] = fade_in
-    envelope[-fade_samples:] = fade_out
+    envelope[:fade_samples] = np.linspace(0, 1, fade_samples)
+    envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
     
-    left *= envelope
-    right *= envelope
-    
-    audio = np.vstack((left, right)).T
-    audio = (audio * 32767).astype(np.int16)
+    audio = (np.vstack((left*envelope, right*envelope)).T * 32767).astype(np.int16)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     wavfile.write(tmp.name, sr, audio)
     return tmp.name
 
-def get_ai_script(api_key, name, goal):
-    if api_key:
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-pro')
-            prompt = f"اكتب سكريبت تنويم إيحائي قصير وهادئ جداً لـ {name}. الهدف: {goal}. اللغة: عربية فصحى دافئة."
-            response = model.generate_content(prompt)
-            return response.text
-        except:
-            return f"مرحباً {name}. " + OFFLINE_SCRIPTS.get(goal)
-    return f"مرحباً {name}. " + OFFLINE_SCRIPTS.get(goal)
-
-def render_final_session(binaural_path, script_text, duration, output_name, levels, music_file=None):
-    tts = gTTS(text=script_text, lang='ar')
-    v_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(v_tmp.name)
-
-    sr = 44100
-    white_noise = np.random.uniform(-1, 1, int(sr * duration))
-    brown_noise = np.cumsum(white_noise)
-    brown_noise = (brown_noise / np.max(np.abs(brown_noise)) * 28000).astype(np.int16) 
-    n_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    wavfile.write(n_tmp.name, sr, brown_noise)
-
-    inputs = ['-i', binaural_path, '-i', v_tmp.name, '-i', n_tmp.name]
-    filter_complex = (
-        f'[0:a]volume={levels["binaural"]}[b];'
-        f'[1:a]adelay=4000|4000,volume={levels["voice"]}[v];'
-        f'[2:a]volume={levels["noise"]}[n];'
-        '[b][n]amix=inputs=2[bg];'
-    )
-
-    if music_file:
-        inputs += ['-i', music_file]
-        filter_complex += f'[3:a]volume=0.4[m];[bg][m]amix=inputs=2[bgm];[bgm][v]amix=inputs=2:duration=first'
-    else:
-        filter_complex += '[bg][v]amix=inputs=2:duration=first'
-
-    cmd = ['ffmpeg', '-y'] + inputs + ['-filter_complex', filter_complex, output_name]
-    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return output_name
-
-def plot_waveform(file_path, title="شكل الموجة"):
-    sr, data = wavfile.read(file_path)
-    if len(data.shape) > 1: data = data[:, 0]
-    plt.figure(figsize=(10, 3))
-    plt.plot(data[:sr*5], color='#1f77b4') 
-    plt.title(title)
-    plt.grid(alpha=0.3)
-    st.pyplot(plt)
-
 # ==========================================
-# 3. واجهة التطبيق (UI)
+# 3. واجهة المستخدم (UI)
 # ==========================================
-st.title("🧠 عيادة Hypno-Vibe: النسخة الموسعة")
-st.markdown("---")
+st.title("🧠 نظام Hypno-Vibe Pro | إدارة الجلسات والأرشفة")
 
+# --- القائمة الجانبية (الأرشيف) ---
 with st.sidebar:
-    st.header("🔑 إعدادات الوصول")
-    api_key = st.text_input("Gemini API Key (اختياري)", type="password")
-    export_format = st.selectbox("صيغة التصدير:", ["mp3", "wav"])
-    uploaded_music = st.file_uploader("🎵 رفع موسيقى خلفية (اختياري)", type=["mp3", "wav"])
+    st.header("📂 أرشيف الجلسات")
+    archived_files = sorted(os.listdir(SESSIONS_DIR), reverse=True)
+    if archived_files:
+        selected_file = st.selectbox("اختر جلسة سابقة:", archived_files)
+        file_path = os.path.join(SESSIONS_DIR, selected_file)
+        with open(file_path, "rb") as f:
+            st.download_button(f"📥 تحميل {selected_file.split('_')[1]}", f, file_name=selected_file)
+        if st.button("🗑️ حذف الجلسة"):
+            os.remove(file_path)
+            st.rerun()
+    else:
+        st.write("لا توجد جلسات مؤرشفة بعد.")
+    
+    st.markdown("---")
+    st.header("⚙️ الإعدادات")
+    api_key = st.text_input("Gemini API Key", type="password")
+    language = st.selectbox("لغة السكريبت:", ["العربية", "Français", "English"])
+    uploaded_music = st.file_uploader("🎵 إضافة موسيقى خلفية", type=["mp3", "wav"])
+    music_vol = st.slider("مستوى الموسيقى", 0.0, 1.0, 0.4) if uploaded_music else 0
 
+# --- المنطقة الأساسية ---
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📋 تشخيص العميل")
+    st.subheader("👤 بيانات العميل")
     name = st.text_input("اسم العميل:", "عبد القادر")
-    goal = st.selectbox("هدف الجلسة المستهدف:", list(SESSION_LOGIC.keys()))
-    duration = st.slider("مدة الجلسة (ثواني):", 30, 300, 60)
+    goal = st.selectbox("الهدف العلاجي:", list(SESSION_LOGIC.keys()))
+    duration = st.slider("المدة (ثواني):", 30, 600, 60)
+    fade_len = st.slider("مدة التلاشي (Fade):", 1, 10, 3)
 
 with col2:
     logic = SESSION_LOGIC[goal]
-    st.subheader("⚙️ الضبط الترددي الآلي")
-    st.success(f"**التردد المختار:** {logic['base']} Hz")
-    st.success(f"**نبضة الدماغ:** {logic['beat']} Hz")
-    st.write(f"*توصيف المهندس:* {logic['desc']}")
+    st.subheader("📊 تحليل الضبط")
+    st.info(f"**Base:** {logic['base']} Hz | **Beat:** {logic['beat']} Hz")
+    st.write(f"*{logic['desc']}*")
 
 st.markdown("---")
-st.subheader("🎚️ تحكم في مستويات الصوت")
-cols = st.columns(3)
-with cols[0]:
-    bin_vol = st.slider("مستوى الترددات (Binaural)", 0.0, 1.0, 0.2)
-with cols[1]:
-    voice_vol = st.slider("مستوى الصوت البشري (Voice)", 0.5, 3.0, 2.0)
-with cols[2]:
-    noise_vol = st.slider("مستوى صوت الشلال (Noise)", 0.0, 1.5, 0.9)
+st.subheader("🎚️ التحكم في الطبقات")
+c1, c2, c3 = st.columns(3)
+with c1: bin_v = st.slider("الترددات", 0.0, 1.0, 0.2)
+with c2: voice_v = st.slider("الصوت البشري", 0.5, 3.0, 2.0)
+with c3: noise_v = st.slider("صوت الشلال", 0.0, 1.5, 0.8)
 
-levels = {"binaural": bin_vol, "voice": voice_vol, "noise": noise_vol}
-
-st.markdown("---")
-st.subheader("👂 معاينة ومعالجة")
-c_preview1, c_preview2 = st.columns(2)
-
-if c_preview1.button("🔊 معاينة الترددات"):
-    bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration)
-    st.audio(bin_path)
-    plot_waveform(bin_path, "موجة الترددات (Binaural Wave)")
-
-if c_preview2.button("🔊 معاينة الشلال"):
+if st.button("🚀 إنتاج وأرشفة الجلسة"):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # 1. الذكاء الاصطناعي
+    status_text.text("🤖 جاري توليد السكريبت...")
+    lang_map = {"العربية": "Arabic", "Français": "French", "English": "English"}
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro')
+        res = model.generate_content(f"Write a professional hypnotic script for {name}. Goal: {goal}. Language: {lang_map[language]}.")
+        script = res.text
+    except:
+        script = f"Session for {name}. Focus: {goal}. Relax and breathe."
+    
+    progress_bar.progress(30)
+    
+    # 2. الهندسة الصوتية
+    status_text.text("🧬 هندسة الترددات...")
+    bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration, fade_len)
+    
+    tts_lang = {"العربية": "ar", "Français": "fr", "English": "en"}[language]
+    tts = gTTS(text=script, lang=tts_lang)
+    v_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(v_tmp.name)
+    
+    progress_bar.progress(60)
+    
+    # 3. الرندرة والأرشفة
+    status_text.text("🎛️ جاري الإنتاج النهائي وحفظ الملف...")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    out_name = f"{timestamp}_{name}_{goal.replace('/', '-')}.mp3"
+    final_path = os.path.join(SESSIONS_DIR, out_name)
+    
+    # دالة الضجيج
     sr = 44100
     white_noise = np.random.uniform(-1, 1, int(sr * duration))
-    brown_noise = np.cumsum(white_noise)
-    brown_noise = (brown_noise / np.max(np.abs(brown_noise)) * 28000).astype(np.int16) 
+    brown_noise = (np.cumsum(white_noise) / sr * 25000).astype(np.int16)
     n_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     wavfile.write(n_tmp.name, sr, brown_noise)
-    st.audio(n_tmp.name)
-    plot_waveform(n_tmp.name, "موجة الشلال (Brown Noise)")
 
-st.markdown("---")
-if st.button("🚀 بدء هندسة وإنتاج الجلسة"):
-    with st.spinner("جاري دمج الطبقات العصبية وبناء الجلسة النهائية..."):
-        final_script = get_ai_script(api_key, name, goal)
-        st.write("📝 **السكريبت المستخدم:**")
-        st.info(final_script)
-        
-        # تصحيح السطر الذي حدث فيه الخطأ
-        bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration)
-        output_file = f"Session_{name}.{export_format}"
-        
-        music_path = None
-        if uploaded_music:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tm:
-                tm.write(uploaded_music.getvalue())
-                music_path = tm.name
-
-        render_final_session(bin_path, final_script, duration, output_file, levels, music_path)
-        
-        st.audio(output_file)
-        st.success(f"✅ تم الإنتاج بنجاح بصيغة {export_format}")
-        
-        with open(output_file, "rb") as file:
-            st.download_button(label="📥 تحميل الجلسة", data=file, file_name=output_file)
+    cmd = [
+        'ffmpeg', '-y', '-i', bin_path, '-i', v_tmp.name, '-i', n_tmp.name,
+        '-filter_complex', 
+        f'[0:a]volume={bin_v}[b];[1:a]adelay=4000|4000,volume={voice_v}[v];[2:a]volume={noise_v}[n];[b][n]amix=inputs=2[bg];[bg][v]amix=inputs=2:duration=first',
+        final_path
+    ]
+    subprocess.run(cmd, capture_output=True)
+    
+    progress_bar.progress(100)
+    status_text.text(f"✅ تم الإنتاج وحفظ الجلسة في الأرشيف باسم: {out_name}")
+    
+    st.audio(final_path)
+    plot_visuals(bin_path)
+    st.success("الجلسة الآن متاحة في القائمة الجانبية (الأرشيف) للرجوع إليها مستقبلاً.")
