@@ -3,4 +3,5 @@ numpy
 scipy
 gTTS
 matplotlib
-google-generativeai
+google-generativeaiا
+
