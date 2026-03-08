@@ -84,22 +84,25 @@ def render_final_session(binaural_path, script_text, duration, output_name, leve
         f'[1:a]adelay=4000|4000,volume={levels["voice"]}[v];'
         f'[2:a]volume={levels["noise"]}[n];'
         '[b][n]amix=inputs=2[bg];'
-        '[bg][v]amix=inputs=2:duration=first'
     )
 
     if music_file:
         inputs += ['-i', music_file]
-        filter_complex += ';[3:a]volume=0.5[m];[bg][m]amix=inputs=2[bgm];[bgm][v]amix=inputs=2:duration=first'
+        filter_complex += f'[3:a]volume=0.4[m];[bg][m]amix=inputs=2[bgm];[bgm][v]amix=inputs=2:duration=first'
+    else:
+        filter_complex += '[bg][v]amix=inputs=2:duration=first'
 
     cmd = ['ffmpeg', '-y'] + inputs + ['-filter_complex', filter_complex, output_name]
     subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return output_name
 
-def plot_waveform(file_path):
+def plot_waveform(file_path, title="شكل الموجة"):
     sr, data = wavfile.read(file_path)
+    if len(data.shape) > 1: data = data[:, 0]
     plt.figure(figsize=(10, 3))
-    plt.plot(data[:sr*5])  # عرض أول 5 ثواني فقط
-    plt.title("شكل الموجة الصوتية")
+    plt.plot(data[:sr*5], color='#1f77b4') 
+    plt.title(title)
+    plt.grid(alpha=0.3)
     st.pyplot(plt)
 
 # ==========================================
@@ -110,9 +113,9 @@ st.markdown("---")
 
 with st.sidebar:
     st.header("🔑 إعدادات الوصول")
-    api_key = st.sidebar.text_input("Gemini API Key (اختياري)", type="password")
+    api_key = st.text_input("Gemini API Key (اختياري)", type="password")
     export_format = st.selectbox("صيغة التصدير:", ["mp3", "wav"])
-    music_file = st.file_uploader("🎵 رفع موسيقى خلفية (اختياري)", type=["mp3", "wav"])
+    uploaded_music = st.file_uploader("🎵 رفع موسيقى خلفية (اختياري)", type=["mp3", "wav"])
 
 col1, col2 = st.columns(2)
 
@@ -130,7 +133,6 @@ with col2:
     st.write(f"*توصيف المهندس:* {logic['desc']}")
 
 st.markdown("---")
-
 st.subheader("🎚️ تحكم في مستويات الصوت")
 cols = st.columns(3)
 with cols[0]:
@@ -143,13 +145,15 @@ with cols[2]:
 levels = {"binaural": bin_vol, "voice": voice_vol, "noise": noise_vol}
 
 st.markdown("---")
-st.subheader("👂 معاينة مباشرة")
-if st.button("🔊 معاينة الترددات فقط"):
+st.subheader("👂 معاينة ومعالجة")
+c_preview1, c_preview2 = st.columns(2)
+
+if c_preview1.button("🔊 معاينة الترددات"):
     bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration)
     st.audio(bin_path)
-    plot_waveform(bin_path)
+    plot_waveform(bin_path, "موجة الترددات (Binaural Wave)")
 
-if st.button("🔊 معاينة الضجيج فقط"):
+if c_preview2.button("🔊 معاينة الشلال"):
     sr = 44100
     white_noise = np.random.uniform(-1, 1, int(sr * duration))
     brown_noise = np.cumsum(white_noise)
@@ -157,13 +161,29 @@ if st.button("🔊 معاينة الضجيج فقط"):
     n_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     wavfile.write(n_tmp.name, sr, brown_noise)
     st.audio(n_tmp.name)
-    plot_waveform(n_tmp.name)
+    plot_waveform(n_tmp.name, "موجة الشلال (Brown Noise)")
 
 st.markdown("---")
 if st.button("🚀 بدء هندسة وإنتاج الجلسة"):
-    with st.spinner("جاري دمج الطبقات العصبية وبناء صوت الشلال..."):
+    with st.spinner("جاري دمج الطبقات العصبية وبناء الجلسة النهائية..."):
         final_script = get_ai_script(api_key, name, goal)
         st.write("📝 **السكريبت المستخدم:**")
         st.info(final_script)
         
-        bin_path =
+        # تصحيح السطر الذي حدث فيه الخطأ
+        bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration)
+        output_file = f"Session_{name}.{export_format}"
+        
+        music_path = None
+        if uploaded_music:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tm:
+                tm.write(uploaded_music.getvalue())
+                music_path = tm.name
+
+        render_final_session(bin_path, final_script, duration, output_file, levels, music_path)
+        
+        st.audio(output_file)
+        st.success(f"✅ تم الإنتاج بنجاح بصيغة {export_format}")
+        
+        with open(output_file, "rb") as file:
+            st.download_button(label="📥 تحميل الجلسة", data=file, file_name=output_file)
