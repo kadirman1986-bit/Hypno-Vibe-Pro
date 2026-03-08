@@ -2,6 +2,4 @@ streamlit
 numpy
 scipy
 gTTS
-pydub
-pyaudioop
 matplotlib
