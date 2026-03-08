@@ -1,118 +1,131 @@
 import streamlit as st
 import numpy as np
 from scipy.io import wavfile
-from gtts import gTTS
 import os
 import tempfile
 import subprocess
+from gtts import gTTS
 import google.generativeai as genai
 
 # ==========================================
-# 1. إعدادات النظام وقاعدة البيانات
+# 1. إعدادات النظام وقاعدة البيانات التقنية
 # ==========================================
-st.set_page_config(page_title="Hypno-Vibe Pro | Bio-Logic", layout="wide", page_icon="🧘‍♂️")
+st.set_page_config(page_title="Hypno-Vibe Pro | Bio-Engineering", layout="wide", page_icon="🧠")
 
-# قاعدة بيانات الترددات (تتحكم بها الخوارزمية آلياً)
+# قاعدة بيانات الترددات (الضبط الآلي)
 SESSION_LOGIC = {
-    "استرخاء وإعادة ضبط (Factory Reset)": {"base": 432.0, "beat": 10.0, "desc": "تردد الشفاء الكوني مع نبضة Alpha."},
-    "تحفيز حسي (Sensory Boost)": {"base": 40.0, "beat": 40.0, "desc": "تردد Gamma للنشوة واليقظة الحسية القصوى."},
-    "الاستسلام وفك القيود (Letting Go)": {"base": 210.42, "beat": 6.0, "desc": "تردد فينوس مع نبضة Theta لفك التشنج النفسي."},
-    "تأريض وسكينة (Grounding/Delay)": {"base": 144.72, "beat": 7.83, "desc": "تردد المريخ مع رنين شومان للتحكم في الانفعال."},
-    "علاج البرود/التحفيز الأنثوي": {"base": 210.42, "beat": 12.0, "desc": "تردد الأنوثة لتحفيز تدفق الطاقة الحيوية."},
-    "استعادة الفطرة والذكورة": {"base": 144.72, "beat": 15.0, "desc": "تردد القوة والتركيز الذكوري الفطري."}
+    "علاج البرود/التحفيز الأنثوي": {"base": 210.42, "beat": 12.0, "desc": "تردد الزهرة لتحفيز الطاقة الأنثوية."},
+    "استعادة الفطرة والذكورة": {"base": 144.72, "beat": 15.0, "desc": "تردد المريخ لتعزيز القوة والتركيز الفطري."},
+    "الاستسلام وفك القيود (Letting Go)": {"base": 210.42, "beat": 6.0, "desc": "نبضة Theta العميقة لإزالة التشنج النفسي."},
+    "تأريض وسكينة (Grounding/Delay)": {"base": 144.72, "beat": 7.83, "desc": "رنين شومان للهدوء والتحكم في الانفعالات."}
+}
+
+# سكريبتات الطوارئ في حال فشل الـ AI
+OFFLINE_SCRIPTS = {
+    "علاج البرود/التحفيز الأنثوي": "تنفسي بعمق.. استرخي تماماً. اسمحي لجسدك باستعادة توازنه الطبيعي وطاقته الحيوية. أنتِ الآن في حالة انسجام تام مع فطرتكِ النقية.",
+    "استعادة الفطرة والذكورة": "خذ نفساً عميقاً.. استشعر قوتك الداخلية واتزانك. أنت الآن في حالة سيطرة وهدوء، متصل تماماً بفطرتك وذكورتك السليمة.",
+    "الاستسلام وفك القيود (Letting Go)": "تحرر من كل القيود العصبية.. اترك كل الأفكار ترحل. الاستسلام لهذا السلام هو قمة الأمان. جسدك يعرف طريقه تماماً نحو اللذة والسكينة.",
+    "تأريض وسكينة (Grounding/Delay)": "أنت الآن ثابت كالجبال.. هادئ كالبحر. نبضاتك متناغمة مع رنين الأرض. السكينة تملأ كيانك وتمنحك سيطرة كاملة على مشاعرك."
 }
 
 # ==========================================
-# 2. الدوال الهندسية المطورة
+# 2. الدوال الهندسية (Core Engines)
 # ==========================================
-def generate_binaural_beat(base_freq, beat_freq, duration, sample_rate=44100):
-    t = np.linspace(0, duration, sample_rate * duration)
+
+def generate_binaural_beat(base_freq, beat_freq, duration):
+    """توليد الترددات العلاجية الخام"""
+    sr = 44100
+    t = np.linspace(0, duration, int(sr * duration))
     left = np.sin(2 * np.pi * base_freq * t)
     right = np.sin(2 * np.pi * (base_freq + beat_freq) * t)
-    audio_data = np.vstack((left, right)).T
-    audio_data = (audio_data * 32767).astype(np.int16)
-    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    wavfile.write(temp_wav.name, sample_rate, audio_data)
-    return temp_wav.name
+    audio = np.vstack((left, right)).T
+    audio = (audio * 32767).astype(np.int16)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    wavfile.write(tmp.name, sr, audio)
+    return tmp.name
 
-def generate_nature_noise(duration, sample_rate=44100):
-    white_noise = np.random.randn(duration * sample_rate)
-    brown_noise = np.cumsum(white_noise)
-    brown_noise = brown_noise / np.max(np.abs(brown_noise))
-    audio_data = (brown_noise * 12000).astype(np.int16)
-    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    wavfile.write(temp_wav.name, sample_rate, audio_data)
-    return temp_wav.name
-
-def generate_human_tts(text, lang='ar'):
-    temp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    # جعل الصوت أبطأ قليلاً ليبدو بشرياً وعلاجياً أكثر
-    tts = gTTS(text=text, lang=lang, slow=False) 
-    tts.save(temp_mp3.name)
-    return temp_mp3.name
-
-def mix_audio_final(binaural_wav, voice_mp3, ambient_wav, output_file):
-    # خوارزمية دمج احترافية توازن بين الطبقات الثلاث
-    cmd = [
-        'ffmpeg', '-y',
-        '-i', binaural_wav,
-        '-i', voice_mp3,
-        '-i', ambient_wav,
-        '-filter_complex',
-        '[0:a]volume=0.3[bin];' # التردد خافت ليعمل تحت الوعي
-        '[1:a]adelay=4000|4000,volume=1.8[v];' # صوت بشري واضح ومرتفع
-        '[2:a]volume=0.25[amb];' # صوت طبيعي ناعم
-        '[bin][amb]amix=inputs=2[bg];'
-        '[bg][v]amix=inputs=2:duration=first',
-        output_file
-    ]
-    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-# ==========================================
-# 3. واجهة المستخدم الذكية
-# ==========================================
-st.title("🧠 عيادة Hypno-Vibe: نظام التوازن الفطري")
-st.sidebar.header("إعدادات الاتصال")
-api_key = st.sidebar.text_input("Gemini API Key", type="password")
-
-# الاستمارة
-st.subheader("📋 تشخيص الحالة (التحليل الحيوي)")
-c1, c2 = st.columns(2)
-
-with c1:
-    name = st.text_input("اسم العميل:", "عبد القادر")
-    goal = st.selectbox("الهدف من الجلسة:", list(SESSION_LOGIC.keys()))
-    duration = st.slider("مدة الجلسة (ثواني):", 30, 300, 60)
-
-with c2:
-    status_info = SESSION_LOGIC[goal]
-    st.info(f"⚙️ **الضبط التلقائي للتردد:**\n- التردد الأساسي: {status_info['base']} Hz\n- نبضة الدماغ: {status_info['beat']} Hz\n- الهدف: {status_info['desc']}")
-
-# توليد السكريبت
-if st.button("🤖 توليد سكريبت علاجي مخصص"):
+def get_ai_script(api_key, name, goal):
+    """جلب السكريبت من Gemini أو استخدام النسخة الاحتياطية"""
     if api_key:
         try:
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-pro')
-            prompt = f"اكتب سكريبت تنويم إيحائي احترافي وقصير لـ {name}. الهدف: {goal}. الأسلوب: هادئ، مشجع، يركز على التواصل مع الجسد والفطرة السليمة. اللغة: عربية فصحى دافئة."
+            prompt = f"اكتب سكريبت تنويم إيحائي قصير وهادئ لـ {name}. الهدف: {goal}. اللغة: عربية فصحى دافئة."
             response = model.generate_content(prompt)
-            st.session_state.script = response.text
+            return response.text
         except:
-            st.error("فشل الاتصال بالذكاء الاصطناعي. تأكد من مفتاح الـ API.")
-    else:
-        st.warning("يرجى إدخال مفتاح API في القائمة الجانبية.")
+            return f"مرحباً {name}. " + OFFLINE_SCRIPTS.get(goal)
+    return f"مرحباً {name}. " + OFFLINE_SCRIPTS.get(goal)
 
-if 'script' in st.session_state:
-    final_script = st.text_area("السكريبت المقترح (يمكنك التعديل):", st.session_state.script, height=200)
+def render_final_session(binaural_path, script_text, duration, output_name):
+    """دمج الطبقات باستخدام FFmpeg (تردد + صوت بشري + تمويه طبيعي)"""
+    # 1. توليد الصوت البشري (TTS)
+    tts = gTTS(text=script_text, lang='ar')
+    v_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(v_tmp.name)
     
-    if st.button("🎧 إنتاج الجلسة النهائية"):
-        with st.spinner("جاري دمج الطبقات العصبية بصوت بشري..."):
-            wav_path = generate_binaural_beat(status_info['base'], status_info['beat'], duration)
-            noise_path = generate_nature_noise(duration)
-            voice_path = generate_human_tts(final_script)
-            output = f"Final_Session_{name}.mp3"
-            
-            mix_audio_final(wav_path, voice_path, noise_path, output)
-            
-            st.success("✅ الجلسة جاهزة. الترددات مخفية خلف التمويه الصوتي.")
-            st.audio(output)
+    # 2. توليد الضجيج الطبيعي (تمويه الشلال)
+    sr = 44100
+    white_noise = np.random.randn(int(sr * duration))
+    brown_noise = np.cumsum(white_noise)
+    brown_noise = (brown_noise / np.max(np.abs(brown_noise)) * 8000).astype(np.int16)
+    n_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    wavfile.write(n_tmp.name, sr, brown_noise)
+
+    # 3. الدمج عبر FFmpeg
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', binaural_path,
+        '-i', v_tmp.name,
+        '-i', n_tmp.name,
+        '-filter_complex',
+        '[0:a]volume=0.3[b];[1:a]adelay=4000|4000,volume=1.8[v];[2:a]volume=0.25[n];[b][n]amix=inputs=2[bg];[bg][v]amix=inputs=2:duration=first',
+        output_name
+    ]
+    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return output_name
+
+# ==========================================
+# 3. واجهة التطبيق (UI)
+# ==========================================
+st.title("🧠 عيادة Hypno-Vibe الذكية")
+st.markdown("---")
+
+with st.sidebar:
+    st.header("🔑 إعدادات الوصول")
+    api_key = st.text_input("Gemini API Key (اختياري)", type="password")
+    st.info("إذا لم يتوفر المفتاح، سيعمل النظام بالسكريبتات المخزنة آلياً.")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📋 تشخيص العميل")
+    name = st.text_input("اسم العميل:", "عبد القادر")
+    goal = st.selectbox("هدف الجلسة المستهدف:", list(SESSION_LOGIC.keys()))
+    duration = st.slider("مدة الجلسة (ثواني):", 30, 300, 60)
+
+with col2:
+    logic = SESSION_LOGIC[goal]
+    st.subheader("⚙️ المواصفات الهندسية")
+    st.success(f"**التردد المختار:** {logic['base']} Hz")
+    st.success(f"**نبضة الدماغ:** {logic['beat']} Hz")
+    st.write(f"*الوصف:* {logic['desc']}")
+
+st.markdown("---")
+
+if st.button("🚀 بدء هندسة وإنتاج الجلسة"):
+    with st.spinner("جاري معالجة البيانات وبناء الطبقات الصوتية..."):
+        # 1. جلب السكريبت
+        final_script = get_ai_script(api_key, name, goal)
+        st.write("📝 **السكريبت المستخدم في الجلسة:**")
+        st.info(final_script)
+        
+        # 2. توليد ودمج الملفات
+        bin_path = generate_binaural_beat(logic['base'], logic['beat'], duration)
+        output_file = f"Session_{name}.mp3"
+        
+        render_final_session(bin_path, final_script, duration, output_file)
+        
+        # 3. عرض النتيجة
+        st.audio(output_file)
+        st.success("✅ تمت العملية بنجاح. الصوت البشري والترددات مدمجة مع تمويه طبيعي.")
